@@ -1,3 +1,5 @@
+import operator
+
 import numpy as np
 import pandas as pd
 
@@ -26,20 +28,14 @@ def search(request):
     if 'q' in request.GET and request.GET['q']:
 
         # message = '数据为: ' + readPlyToNp() + request.GET['q']
-        message = readPly()
-        arr = []
-        for x in message:
-            arr.append(list(x.tolist()))  # numpy obj -> tuple ->list
-        dic = {}
-        dic['vertex'] = arr
-        dicJson = json.dumps(dic)
+        dic = readPly()
     else:
         message = '你提交了空表单'
         # return HttpResponse('hello')
     return JsonResponse(dic)
 
 
-def readPly():
+def readPly():  # 读取顶点和面，返回一个dict。
     plydata = PlyData.read(os.path.join(BASE_DIR, r'plyRender\tet.ply'))
 
     print(plydata.elements[0].name)
@@ -68,9 +64,19 @@ def readPly():
     # return plydata['vertex']
     print('————↓face np↓————')
     print(face_np)
-    dic = {}
 
-    return vertex_np
+    dic = {}
+    for kind in (vertex_np, face_np):
+        arr = []
+        for x in kind:
+            arr.append(list(x.tolist()))  # 类型转换 numpy obj -> tuple ->list
+        arr = sum(arr, [])  # 多维转一维
+        if kind is vertex_np:
+            dic['vertex'] = arr
+        else:
+            dic['facet'] = arr
+
+    return dic
 
 
 def readPlyToNp():

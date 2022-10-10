@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>菜鸟教程(runoob.com)</title>
+    <title>PLY渲染</title>
     <script src="../static/jquery-3.6.1.min.js"></script>
 </head>
 <body>
@@ -11,34 +11,189 @@
         <input type="submit" value="搜索">
     </form> -->
 
-    <button id="btn">发送ajax</button>
+    <button id="getBtn">获取PLY数据</button>
     <!-- 添加csrf_token -->
 	{% csrf_token %} 
+    <button id="renderBtn">渲染</button>
+    <canvas id="canvas" width="400" height="400" style="background-color: #0e1822"></canvas>
 
+
+    <script id="vertexShaderSource" type="x-shader/x-vertex">
+
+        attribute vec4 apos;
+        attribute vec4 aColor;
+        varying vec4 vColor;
+        uniform mat4 mx;         //绕x轴旋转矩阵
+        // uniform mat4 my;
+        void main(){ 
+       
+        float radian = radians(30.0);
+        float cos = cos(radian);
+        float sin = sin(radian);
+        //mat4 mx = mat4(1,0,0,0,  0,cos,-sin,0,  0,sin,cos,0,  0,0,0,1);
+        mat4 my = mat4(cos,0,-sin,0,  0,1,0,0,  sin,0,cos,0,  0,0,0,1);
+       
+        gl_Position = mx*my*apos;   
+        vColor=aColor;
+        }
+      
+    </script>
    
+    <script id="fragShaderSource" type="x-shader/x-vertex">
+        precision highp float;  //设置一个精度
+        varying vec4 vColor;    //由vertex shader传递过来
+        void main(){
+         //  gl_FragColor = vec4(0.0,0.8,0.0,1.0);
+           gl_FragColor = vColor;
+        }
+    </script>
+
+
     <script>
-  $('#btn').click(function () {
+
+  $('#getBtn').click(function () {
 		var csrf = $('input[name="csrfmiddlewaretoken"]').val();  //增加csrf变量将在data中传参以避免403错误
-        // 朝后端发送ajax请求
         $.ajax({
-            // 1.指定朝哪个后端发送ajax请求
             url:'/search/', //不写就是朝当前地址提交【与form表单的action参数相同】
-            // 2.请求方式
-            type:'get',  // 不指定默认就是get，都是小写
-            // 3.数据
+            type:'get',  // 不指定默认就是get
             data:{'q':5},
             //data:{'num1':$('#d1').val(), 'num2':$('#d2').val(),'csrfmiddlewaretoken': csrf},
             // 4.回调函数:当后端给你返回结果的时候会自动触发，args接受后端的返回结果
             success:function (args) {
-               console.log('ajax success! data = '+ analyze(args))
+                console.log('[AJAX DATA]')
+                console.log(args)
+                console.log(typeof(args))
+                dataProcess(args)//数据处理
+                
             }
         })
     })
 
-        function analyze(str)
-        {
-            console.log(str)
-        }
+
+    function dataProcess(args){     //顶点和面数据处理后装入数组
+        args['vertex'].forEach((item,index,arr)=>{
+        arr[index]/=2;
+    });                 // 渲染时坐标范围为0~1
+        console.log(args['vertex'])
+        vertex=new Float32Array(args['vertex'])
+        facet=new Uint16Array(args['facet'])
+    }
+
+
+    var canvasElement=document.getElementById('canvas');
+    var gl=canvasElement.getContext('webgl');
+    var program = initShader(gl,vertexShaderSource,fragShaderSource);
+    var aposLocation = gl.getAttribLocation(program,'apos');        //顶点着色器的位置变量apos
+
+
+    var vertex=null;
+    var facet=null;
+    var color = [
+            0.8, 0.7, 0, 1,
+            0, 0.5, 0.5, 1,
+            0, 0, 1, 1,
+            0.7, 0, 0.9, 1
+        ];
+
+    var angle = (10.0*Math.PI/180.0);//摄像机起始角度
+    var angleSpeed = Math.PI/500;//摄像机角速度Math.PI/3000弧度每毫秒
+    var T0 = new Date();//上次时间
+    var t=0;
+    var mx = gl.getUniformLocation(program,'mx');
+
+
+
+    $('#renderBtn').click(function(){
+
+        //将数据放入缓冲区
+        var vertexBuffer=gl.createBuffer();
+        //绑定缓冲区对象
+        gl.bindBuffer(gl.ARRAY_BUFFER,vertexBuffer);
+        //顶点数组传入缓冲区
+        gl.bufferData(gl.ARRAY_BUFFER,vertex,gl.STATIC_DRAW);
+
+
+        var facetBuffer = gl.createBuffer();            //面索引
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, facetBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, facet, gl.STATIC_DRAW);
+        gl.vertexAttribPointer(aposLocation,3,gl.FLOAT,false,0,0);  //传递给apos attribute
+        gl.enableVertexAttribArray(aposLocation);
+
+
+
+        var colorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(color), gl.STATIC_DRAW);
+        var aColorPosition = gl.getAttribLocation(program, 'aColor');
+        gl.vertexAttribPointer(aColorPosition,4, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(aColorPosition);
+
+
+
+
+               //渲染循环
+               (function loop() {
+                console.log('rendering...')
+            render();
+            rafId = window.requestAnimationFrame(loop);
+            if(false){
+                cancelAnimationFrame(rafId)
+              //  console.log('stop')
+            }   
+        })();
+        
+
+})
+
+
+
+
+
+    function render () {
+        cameraMove()//视角移动
+        draw()
+    }
+
+
+    function cameraMove(){
+        angle += angleSpeed;//时间差乘以角速度
+        
+        var sin = Math.sin(angle);  //旋转角度正弦值，弧度
+        var cos = Math.cos(angle);
+        
+    //  var Arry = new Float32Array([cos,0,-sin,0,  0,1,0,0,  sin,0,cos,0,  0,0,0,1]);
+        var Arrx = new Float32Array([1,0,0,0,  0,cos,-sin,0,  0,sin,cos,0,  0,0,0,1]);
+
+        //gl.clear(gl.COLOR_BUFFER_BIT);//清空画布上一帧图像
+        gl.uniformMatrix4fv(mx,false,Arrx);
+    //  gl.uniformMatrix4fv(my,false,Arry);
+
+    }
+
+
+    function draw()
+    {
+        //gl.drawElements(gl.LINE_LOOP, facet.length, gl.UNSIGNED_SHORT, 0);
+        gl.drawElements(gl.TRIANGLES, facet.length, gl.UNSIGNED_SHORT, 0);
+    }
+
+    function initShader(gl,vertexShaderSource,fragmentShaderSource){
+        var vertexShader = gl.createShader(gl.VERTEX_SHADER);
+        var fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+        
+        gl.shaderSource(vertexShader, document.getElementById('vertexShaderSource').innerText) 
+        gl.shaderSource(fragmentShader, document.getElementById('fragShaderSource').innerText) 
+        gl.compileShader(vertexShader);
+        gl.compileShader(fragmentShader);
+
+        var program = gl.createProgram();
+        gl.attachShader(program,vertexShader);
+        gl.attachShader(program,fragmentShader);
+        gl.linkProgram(program);
+        gl.useProgram(program);
+        return program;
+    }
+
     </script>
 </body>
 </html>
