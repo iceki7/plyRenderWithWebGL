@@ -38,11 +38,11 @@ def search(request):
 def readPly():  # 读取顶点和面，返回一个dict。
     plydata = PlyData.read(os.path.join(BASE_DIR, r'plyRender\tet.ply'))
 
-    print(plydata.elements[0].name)
-    print(plydata.elements[0].data[0])
-    print(plydata.elements[0].data['z'])
-    print(plydata['face'][0]['red'])
-    print(plydata['face'][0]['vertex_indices'])
+    # print(plydata.elements[0].name)
+    # print(plydata.elements[0].data[0])
+    # print(plydata.elements[0].data['z'])
+    # print(plydata['face'][0]['red'])
+    # print(plydata['face'][0]['vertex_indices'])
 
     # for x in plydata.elements:
     #     print(x.name)
